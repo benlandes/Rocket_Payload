@@ -2,7 +2,7 @@
 #include <Wire.h>
 
 SFE_BMP180 pressure;
-#define SEAP 1013.25 //mbar
+#define SEAP 1019.0 //mbar
 
 void setup() {
   Serial.begin(9600);

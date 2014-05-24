@@ -3,8 +3,12 @@
 #include <SFE_BMP180.h>
 #include <Wire.h>
 
+//For Unit Testing
+#define USE_TEST_INPUT false
+#define TESTFILE "TEST1.csv";
 
 //Program Input
+#define USE_DUAL_DEPLOYMENT true
 #define MAIN_TARGET_ALT 2000 //ft
 #define LAUNCH_ACCEL 4 //G
 
@@ -19,7 +23,7 @@
 const int accelPort = 0; //Analog
 
 //Calibration
-const double SEAP = 1013.25; //mbar
+#define SEAP 1019.0 //mbar
 
 //States
 #define BEFORE_ARMING 0
@@ -34,9 +38,7 @@ int currentStatus = BEFORE_ARMING;
 SFE_BMP180 pressure;
 
 //Sensor Offsets
-double voltOffset;
-double groundAlt; //ft
-
+float voltOffset, groundAlt; //V, ft
 
 void setup() {
   
@@ -52,88 +54,115 @@ void setup() {
 
 }
 
+
+
+float accel, alt, temp, pres;
+unsigned long launchTime, time;
+float maxAlt = 0;
+uint32_t timer = millis();
+
 //Receiving data from slave
 void receiveEvent(int howMany)
 {
-
-  while(0 < Wire.available()) // loop through all but the last
-  {
-    char c = Wire.read(); // receive byte as a character
-    Serial.print(c);         // print the character
-  }
-  Serial.println();         // Newline
-}
-
-double g, alt;
-unsigned long launchTime;
-float maxAlt = 0;
-uint32_t timer = millis();
-void loop() {
-  //// Gather Data ////
-  Serial.println("h1");
-  //Accelerometer
-  double voltageAccel = ((double) analogRead(accelPort))*5/1024 - voltOffset;
-  g = (voltageAccel-2.5)/0.008;
- // double accel = g*32.2; //Acceleration (ft/s)
-  Serial.println("h2");
- 
-  //Pressure, Temperature, and altitude
-  double temp, pres, alt;
-  Serial.println("h3");
-  //Getting temperature increases acuracy of pressure calculation
-  char status = pressure.startTemperature();
-  if (status != 0)
-  {
-    Serial.println("h3");
-    // Wait for the measurement to complete:
-    delay(status);
-    pressure.getTemperature(temp);
-    Serial.println("h5");
-    status = pressure.startPressure(3); //3 - High Resolution
-    if(status != 0){
-      Serial.println("h6");
-      delay(status);
-      status = pressure.getPressure(pres,temp);
-      if(status !=0){
-        alt = pressure.altitude(pres,SEAP)*3.28084,0; //ft
-        pres = pres*2.09; // (lb/ft^2)
-        temp = (9.0/5.0)*temp+32.0; //(deg F)
-      }
-      
+  char line[howMany+1];
+  line[howMany] = '\0';
+  if(USE_TEST_INPUT){
+    for(int i = 0; i < howMany; i++){
+      line[i] = Wire.read();
     }
+    
+    
+  }else{
+    while(0 < Wire.available()) // loop through all but the last
+    {
+      char c = Wire.read(); // receive byte as a character
+      Serial.print(c);         // print the character
+    }
+    Serial.println();         // Newline
   }
   
+}
+void loop() {
   
+  if(USE_TEST_INPUT != false){
+    //// Gather Data ////
+    
+    //Accelerometer
+    double voltageAccel = ((double) analogRead(accelPort))*5/1024 - voltOffset;
+    accel = (voltageAccel-2.5)/0.008*9.81; //m/s^2
+    
+    Serial.println("h2");
+   
+    //Getting temperature increases acuracy of pressure calculation
+    char status = pressure.startTemperature();
+    if (status != 0)
+    {
+      Serial.println("h4");
+      // Wait for the measurement to complete:
+      delay(status);
+      pressure.getTemperature(temp);
+      Serial.println("h5");
+      status = pressure.startPressure(3); //3 - High Resolution
+      if(status != 0){
+        Serial.println("h6");
+        delay(status);
+        status = pressure.getPressure(pres,temp); //mbar, celsius
+        if(status != 0){
+          //Uses equation for first gradiant layer (Valid for max altitude rocket will reach)
+          alt = pressure.altitude(pres,SEAP); //m
+        }
+      }
+    }
+  }else{
+    
+    
+  }
+}
+void process(){
   Serial.println("h7");
   //// Update Status ////
   int previousStatus = currentStatus;
+  
   updateStatus();
   
   //Check if ejection charges need to be fired
+  if(USE_DUAL_DEPLOYMENT){
+    if(previousStatus == BEFORE_APOGEE && currentStatus == BEFORE_MAIN){
+      fireCharge(7); //Aft Charge - Drouge 
+    }else if(previousStatus == BEFORE_MAIN && currentStatus == BEFORE_LANDING){
+      fireCharge(6); //Forward Charge - Main
+    }
+  }else{
+    if(previousStatus == BEFORE_APOGEE && currentStatus == BEFORE_LANDING){
+      //For non dual deployment both charges will be placed in main charge for redudency
+      fireCharge(7);
+      fireCharge(6);
+    }
+  }
   
   //Save data to sd card
-  String dataString = String(currentStatus)+","+String(millis())+","+String(g)+","+String(temp)+","+String(pres)+","+String(alt);
+  String dataString = String(currentStatus)+","+String(millis())+","+String(accel)+","+String(temp)+","+String(pres)+","+String(alt);
   
   char dataChar[dataString.length()+1];
   dataString.toCharArray(dataChar,dataString.length()+1);
   Serial.println(dataChar);
-  Serial.println("h8");
   
-  Wire.beginTransmission(5); // transmit to device #4
-  Wire.write(dataChar);        // sends five bytes
-  Wire.endTransmission();    // stop transmitting
+  //Transmit to slave arduino which will handle saving
+  //and transmitting of telemetry
+  Wire.beginTransmission(5);
+  Wire.write(dataChar);        
+  Wire.endTransmission();
   
-  Serial.println("h9");
   delay(250);
-  //fireCharge(7);
-  //fireCharge(6);
+  
 }
 void setOffsets(){
   voltOffset =  ((double) analogRead(accelPort))*5/1024 - 2.5;
   groundAlt = alt;
 }
 void updateStatus(){
-  //Check Arming Switch
+  
+  //Check Arming Switch (1024 - engaged, 0 - disengaged)
   if(analogRead(1) < 512 && currentStatus != BEFORE_ARMING){
     currentStatus = BEFORE_ARMING;
   }
@@ -163,12 +192,15 @@ void updateStatus(){
     
     
     if(maxAlt - 30 > alt - groundAlt){
-      fireCharge(6);
-      currentStatus = BEFORE_MAIN;
+      if(USE_DUAL_DEPLOYMENT){
+        currentStatus = BEFORE_MAIN;
+      }else{
+        currentStatus == BEFORE_LANDING;
+      }
     }
   }else if(currentStatus == BEFORE_MAIN){
     if(MAIN_TARGET_ALT -30 > alt - groundAlt){
-      fireCharge(7);
+      currentStatus = BEFORE_LANDING;
     } 
   }else if(currentStatus == BEFORE_LANDING){
     
@@ -177,7 +209,7 @@ void updateStatus(){
 
 void fireCharge(int port){
   digitalWrite(port, HIGH);   // sets the LED on
-  delay(1000);                  // waits for a second
+  delay(70);                  // waits for a second
   digitalWrite(port, LOW);    // sets the LED off
 }
 
