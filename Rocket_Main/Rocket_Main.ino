@@ -4,8 +4,7 @@
 #include <Wire.h>
 
 //For Unit Testing
-#define USE_TEST_INPUT false
-#define TESTFILE "TEST1.csv";
+#define USE_TEST_INPUT true
 
 //Program Input
 #define USE_DUAL_DEPLOYMENT true
@@ -13,11 +12,11 @@
 #define LAUNCH_ACCEL 4 //G
 
 //Safety Timers
-#define MACH_DELAY 100 //sec
-#define DROGUE_LOW_WIN 150 //Sec
-#define DROGUE_HIGH_WIN 300 //Sec
-#define MAIN_LOW_WIN 250 //Sec
-#define MAIN_HIGH_WIN 400 //Sec
+#define MACH_DELAY 9 //sec
+#define DROGUE_LOW_WIN 15 //Sec
+#define DROGUE_HIGH_WIN 60 //Sec
+#define MAIN_LOW_WIN 100 //Sec
+#define MAIN_HIGH_WIN 300 //Sec
 
 //Ports
 const int accelPort = 0; //Analog
@@ -56,8 +55,9 @@ void setup() {
 
 
 
-float accel, alt, temp, pres;
-unsigned long launchTime, time;
+double accel, alt, temp, pres;
+bool armingSwitchEngaged = false;
+double launchTime, time;
 float maxAlt = 0;
 uint32_t timer = millis();
 
@@ -70,7 +70,14 @@ void receiveEvent(int howMany)
     for(int i = 0; i < howMany; i++){
       line[i] = Wire.read();
     }
+    //Serial.println(line); 
+    time = atof(strtok(line,","));
+    alt = atof(strtok(NULL,","));
+    accel = atof(strtok(NULL,","));
+    temp = atof(strtok(NULL,","));
+    armingSwitchEngaged = atoi(strtok(NULL,","));
     
+    process();
     
   }else{
     while(0 < Wire.available()) // loop through all but the last
@@ -84,7 +91,9 @@ void receiveEvent(int howMany)
 }
 void loop() {
   
-  if(USE_TEST_INPUT != false){
+  //When unit testing data will be read from sd card instead
+  //of from sensors
+  if(USE_TEST_INPUT == false){
     //// Gather Data ////
     
     //Accelerometer
@@ -113,10 +122,17 @@ void loop() {
         }
       }
     }
-  }else{
+    //Safety Switch (1024 - engaged, 0 - disengaged)
+    if(analogRead(1) < 512){
+      armingSwitchEngaged = false;
+    }else{
+      armingSwitchEngaged = true;
+    }
     
-    
+    time = double(millis())/1000; //Sec
+    process();
   }
+  
 }
 void process(){
   Serial.println("h7");
@@ -162,13 +178,13 @@ void setOffsets(){
 }
 void updateStatus(){
   
-  //Check Arming Switch (1024 - engaged, 0 - disengaged)
-  if(analogRead(1) < 512 && currentStatus != BEFORE_ARMING){
+  //Check Arming Switch 
+  if(!armingSwitchEngaged && currentStatus != BEFORE_ARMING){
     currentStatus = BEFORE_ARMING;
   }
   
   if(currentStatus == BEFORE_ARMING){
-    if(analogRead(1) > 512){
+    if(armingSwitchEngaged){
       currentStatus = BEFORE_LAUNCH;
       
       //Zero out sensors
@@ -177,8 +193,8 @@ void updateStatus(){
   }else if(currentStatus == BEFORE_LAUNCH){
     //If acceleration is greater than
     //expected launch trigger acceleration
-    if(g > LAUNCH_ACCEL){
-      launchTime = millis();
+    if(accel > LAUNCH_ACCEL){
+      launchTime = time;
       currentStatus = DURING_MACH_DELAY;
     }
   }else if(currentStatus == DURING_MACH_DELAY){

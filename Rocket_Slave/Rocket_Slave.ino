@@ -4,13 +4,18 @@
 #include <SD.h>
 #include <Wire.h>
 
+//For Unit Testing
+#define USE_TEST_INPUT true
+#define TEST_FILE "TEST1.csv"
+
 const int chipSelect = 4;
 File dataFile;
+File testFile;
 SoftwareSerial softSerial(8, 9);
 Adafruit_GPS GPS(&softSerial);
 
 void setup() {
-  //delay(2000);
+  delay(5000);
   // put your setup code here, to run once:
   
   pinMode(SS, OUTPUT);
@@ -25,12 +30,19 @@ void setup() {
   }
   Serial.println(fileName);
   dataFile = SD.open(fileName, FILE_WRITE);
-  if (! dataFile) Serial.println("Open Fail");
+  if (! dataFile) Serial.println("SD Open Log Fail");
   
   //Print Header
   dataFile.println("State, t(msec),a(G),T(F),P(lb/ft^2),P Alt(ft), Lat, Lon, GPS Alt");
   
+  //Open Test File if Needed
+  if(USE_TEST_INPUT){
+    testFile = SD.open(TEST_FILE);
+    if (!testFile) Serial.println("SD Open Test Fail");
+  }
   
+  
+  //GPS Setup
   GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);   // 1 Hz update rate
   GPS.begin(9600);
   
@@ -72,10 +84,12 @@ void loop() {
     if (!GPS.parse(GPS.lastNMEA())) return;
   }
   
-  if (timer > millis())  timer = millis();
   
   if (millis() - timer > 2000) { 
+    
     timer = millis(); // reset the timer
+    
+    
     //Serial1.println("Test");
     //dataFile.println("Test");
     //dataFile.flush();
@@ -96,5 +110,26 @@ void loop() {
     //Serial.println(test2);
     //Serial.println(GPS.lat);
   }
+  
+  //Will read test input file and send it to master
+  if(USE_TEST_INPUT){
+    if(testFile.available()){
+      Wire.beginTransmission(4); // transmit to device #4
+      while (testFile.available()) {
+        char c = testFile.read();
+        Serial.print(c);
+        
+        Wire.write(c);        // sends five bytes
+        
+        if(c == '\n')break;
+        
+      }
+      Wire.endTransmission();
+      
+    }
+    
+  }
+  delay(300);
+  
 
 }
