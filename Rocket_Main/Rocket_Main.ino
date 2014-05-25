@@ -59,33 +59,61 @@ double accel, alt, temp, pres;
 bool armingSwitchEngaged = false;
 double launchTime, time;
 float maxAlt = 0;
+char receiveLine[50];
+int receiveI;
 uint32_t timer = millis();
 
 //Receiving data from slave
 void receiveEvent(int howMany)
 {
+  //Serial.print("Receive");
+  /*
   char line[howMany+1];
-  line[howMany] = '\0';
+  //line[howMany] = '\0';
   if(USE_TEST_INPUT){
     for(int i = 0; i < howMany; i++){
       line[i] = Wire.read();
     }
-    //Serial.println(line); 
+    Serial.println(line); 
     time = atof(strtok(line,","));
     alt = atof(strtok(NULL,","));
     accel = atof(strtok(NULL,","));
     temp = atof(strtok(NULL,","));
     armingSwitchEngaged = atoi(strtok(NULL,","));
-    
-    process();
-    
+    */
+    //process();
+  if(USE_TEST_INPUT){
+    while(Wire.available()){
+       char c = Wire.read();
+      
+       //Serial.print(c);
+       receiveLine[receiveI] = c;
+       receiveI++;
+       if(c == '\n'){
+         //Serial.print(receiveLine);
+         time = atof(strtok(receiveLine,","));
+         Serial.print("Time: "); Serial.print(time); Serial.println("(s)");
+         alt = atof(strtok(NULL,","));
+         accel = atof(strtok(NULL,","));
+         temp = atof(strtok(NULL,","));
+         armingSwitchEngaged = atoi(strtok(NULL,","));
+         
+         for(int i = 0; i < 50; i++){
+           receiveLine[i] = 0;
+         }
+         receiveI = 0;
+         
+       }
+       
+    }  
   }else{
+    
     while(0 < Wire.available()) // loop through all but the last
     {
       char c = Wire.read(); // receive byte as a character
       Serial.print(c);         // print the character
     }
-    Serial.println();         // Newline
+    //Serial.println();         // Newline
   }
   
 }

@@ -114,22 +114,30 @@ void loop() {
   //Will read test input file and send it to master
   if(USE_TEST_INPUT){
     if(testFile.available()){
-      Wire.beginTransmission(4); // transmit to device #4
+      
       while (testFile.available()) {
+        Wire.beginTransmission(4);
+         // transmit to device #4
         char c = testFile.read();
         Serial.print(c);
         
         Wire.write(c);        // sends five bytes
         
+        
+        Wire.endTransmission();
         if(c == '\n')break;
         
       }
-      Wire.endTransmission();
       
+      
+    }else{
+      testFile = SD.open(TEST_FILE);
     }
     
+    
   }
-  delay(300);
+  delay(100);
+  
   
 
 }
