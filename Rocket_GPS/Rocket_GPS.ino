@@ -3,7 +3,7 @@
 #include <SoftwareSerial.h>
 
 // Use software serial for GPS (Xbee using hardware serial
-SoftwareSerial softSerial(8, 9);
+SoftwareSerial softSerial(6,9);
 Adafruit_GPS GPS(&softSerial);
 
 void setup() {
@@ -23,6 +23,7 @@ void loop() {
   
   if (millis() - timer > 2000) { 
     timer = millis(); // reset the timer
+    
     Serial.print(GPS.hour, DEC); Serial.print(':');
     Serial.print(GPS.minute, DEC); Serial.print(':');
     Serial.print(GPS.seconds, DEC); Serial.print('.');

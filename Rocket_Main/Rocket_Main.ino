@@ -4,19 +4,39 @@
 #include <Wire.h>
 
 //For Unit Testing
-#define USE_TEST_INPUT true
+#define USE_TEST_INPUT false
 
 //Program Input
-#define USE_DUAL_DEPLOYMENT true
-#define MAIN_TARGET_ALT 2000 //ft
-#define LAUNCH_ACCEL 4 //G
+//L2
 
+#define USE_DUAL_DEPLOYMENT true
+#define SECOND_TARGET_ALT 750 //ft
+#define LAUNCH_ACCEL 30 //m/s^2
+
+
+//L1
+/*
+#define USE_DUAL_DEPLOYMENT false
+#define SECOND_TARGET_ALT 0 //ft
+#define LAUNCH_ACCEL 30.0 //m/s^2
+*/
 //Safety Timers
+//L2
+
 #define MACH_DELAY 9 //sec
-#define DROGUE_LOW_WIN 15 //Sec
-#define DROGUE_HIGH_WIN 60 //Sec
-#define MAIN_LOW_WIN 100 //Sec
-#define MAIN_HIGH_WIN 300 //Sec
+#define APOGEE_LOW_WIN 15 //Sec
+#define APOGEE_HIGH_WIN 60 //Sec
+#define SECOND_LOW_WIN 100 //Sec
+#define SECOND_HIGH_WIN 300 //Sec
+
+
+//L1
+/*#define MACH_DELAY 0 //sec
+#define APOGEE_LOW_WIN 5.0 //Sec
+#define APOGEE_HIGH_WIN 18 //Sec
+#define SECOND_LOW_WIN 0 //Sec
+#define SECOND_HIGH_WIN 0 //Sec
+*/
 
 //Ports
 const int accelPort = 0; //Analog
@@ -29,11 +49,11 @@ const int accelPort = 0; //Analog
 #define BEFORE_LAUNCH 1
 #define DURING_MACH_DELAY 2
 #define BEFORE_APOGEE 3
-#define BEFORE_MAIN 4
+#define BEFORE_SECOND 4 //2nd parachute
 #define BEFORE_LANDING 5
 #define AFTER_LANDING 6
 
-int currentStatus = BEFORE_ARMING;
+int currentStatus = BEFORE_LAUNCH;
 SFE_BMP180 pressure;
 
 //Sensor Offsets
@@ -47,10 +67,19 @@ void setup() {
   
   //For communicating with slave xbee
   Wire.begin(4);                // join i2c bus with address #4
+  //Send Restart Test Signal to Slave if in Test Mode
+  if(USE_TEST_INPUT){
+    Wire.beginTransmission(5);
+    Wire.write('R');        
+    Wire.endTransmission();
+  }
   Wire.onReceive(receiveEvent); // register event
 
   pressure.begin();
-
+  
+  //Wait 10 seconds then set offsets for data
+  delay(10000);
+  setOffsets();
 }
 
 
@@ -66,22 +95,6 @@ uint32_t timer = millis();
 //Receiving data from slave
 void receiveEvent(int howMany)
 {
-  //Serial.print("Receive");
-  /*
-  char line[howMany+1];
-  //line[howMany] = '\0';
-  if(USE_TEST_INPUT){
-    for(int i = 0; i < howMany; i++){
-      line[i] = Wire.read();
-    }
-    Serial.println(line); 
-    time = atof(strtok(line,","));
-    alt = atof(strtok(NULL,","));
-    accel = atof(strtok(NULL,","));
-    temp = atof(strtok(NULL,","));
-    armingSwitchEngaged = atoi(strtok(NULL,","));
-    */
-    //process();
   if(USE_TEST_INPUT){
     while(Wire.available()){
        char c = Wire.read();
@@ -92,11 +105,22 @@ void receiveEvent(int howMany)
        if(c == '\n'){
          //Serial.print(receiveLine);
          time = atof(strtok(receiveLine,","));
-         Serial.print("Time: "); Serial.print(time); Serial.println("(s)");
          alt = atof(strtok(NULL,","));
          accel = atof(strtok(NULL,","));
          temp = atof(strtok(NULL,","));
+         pres = atof(strtok(NULL,","));
          armingSwitchEngaged = atoi(strtok(NULL,","));
+         
+         
+         Serial.print("Time: "); Serial.print(time); Serial.print("(s)");
+         Serial.print(" h: "); Serial.print(alt); Serial.print("(m)");
+         Serial.print(" a: "); Serial.print(accel); Serial.print("(m/s^2)");
+         Serial.print(" T: "); Serial.print(temp); Serial.print("(C)");
+         Serial.print(" P: "); Serial.print(pres); Serial.print("(mbar)");
+         if(armingSwitchEngaged) Serial.println(" Switch Engaged");
+         else Serial.println(" Switch Disengaged");
+         
+         process();
          
          for(int i = 0; i < 50; i++){
            receiveLine[i] = 0;
@@ -126,22 +150,18 @@ void loop() {
     
     //Accelerometer
     double voltageAccel = ((double) analogRead(accelPort))*5/1024 - voltOffset;
-    accel = (voltageAccel-2.5)/0.008*9.81; //m/s^2
-    
-    Serial.println("h2");
-   
+    accel = -(voltageAccel-2.5)/0.008*9.81; //m/s^2
+       
     //Getting temperature increases acuracy of pressure calculation
     char status = pressure.startTemperature();
     if (status != 0)
     {
-      Serial.println("h4");
+
       // Wait for the measurement to complete:
       delay(status);
       pressure.getTemperature(temp);
-      Serial.println("h5");
       status = pressure.startPressure(3); //3 - High Resolution
       if(status != 0){
-        Serial.println("h6");
         delay(status);
         status = pressure.getPressure(pres,temp); //mbar, celsius
         if(status != 0){
@@ -159,11 +179,11 @@ void loop() {
     
     time = double(millis())/1000; //Sec
     process();
+    delay(10);
   }
   
 }
 void process(){
-  Serial.println("h7");
   //// Update Status ////
   int previousStatus = currentStatus;
   
@@ -171,9 +191,9 @@ void process(){
   
   //Check if ejection charges need to be fired
   if(USE_DUAL_DEPLOYMENT){
-    if(previousStatus == BEFORE_APOGEE && currentStatus == BEFORE_MAIN){
+    if(previousStatus == BEFORE_APOGEE && currentStatus == BEFORE_SECOND){
       fireCharge(7); //Aft Charge - Drouge 
-    }else if(previousStatus == BEFORE_MAIN && currentStatus == BEFORE_LANDING){
+    }else if(previousStatus == BEFORE_SECOND && currentStatus == BEFORE_LANDING){
       fireCharge(6); //Forward Charge - Main
     }
   }else{
@@ -185,7 +205,7 @@ void process(){
   }
   
   //Save data to sd card
-  String dataString = String(currentStatus)+","+String(millis())+","+String(accel)+","+String(temp)+","+String(pres)+","+String(alt);
+  String dataString = String(currentStatus)+","+String(time-launchTime)+","+String(accel)+","+String(temp)+","+String(pres)+","+String(alt);
   
   char dataChar[dataString.length()+1];
   dataString.toCharArray(dataChar,dataString.length()+1);
@@ -193,12 +213,11 @@ void process(){
   
   //Transmit to slave arduino which will handle saving
   //and transmitting of telemetry
-  Wire.beginTransmission(5);
-  Wire.write(dataChar);        
-  Wire.endTransmission();
-  
-  delay(250);
-  
+  if(!USE_TEST_INPUT){
+    Wire.beginTransmission(5);
+    Wire.write(dataChar);        
+    Wire.endTransmission();
+  }
 }
 void setOffsets(){
   voltOffset =  ((double) analogRead(accelPort))*5/1024 - 2.5;
@@ -207,7 +226,7 @@ void setOffsets(){
 void updateStatus(){
   
   //Check Arming Switch 
-  if(!armingSwitchEngaged && currentStatus != BEFORE_ARMING){
+  /*if(!armingSwitchEngaged && currentStatus != BEFORE_ARMING){
     currentStatus = BEFORE_ARMING;
   }
   
@@ -218,7 +237,9 @@ void updateStatus(){
       //Zero out sensors
       setOffsets();
     }
-  }else if(currentStatus == BEFORE_LAUNCH){
+  }else */
+  
+  if(currentStatus == BEFORE_LAUNCH){
     //If acceleration is greater than
     //expected launch trigger acceleration
     if(accel > LAUNCH_ACCEL){
@@ -226,24 +247,25 @@ void updateStatus(){
       currentStatus = DURING_MACH_DELAY;
     }
   }else if(currentStatus == DURING_MACH_DELAY){
-    if(millis() - launchTime > MACH_DELAY){
+    if(time - launchTime > MACH_DELAY){
        currentStatus = BEFORE_APOGEE;
     }
   }else if(currentStatus == BEFORE_APOGEE){
     if(maxAlt < alt - groundAlt){
       maxAlt = alt - groundAlt;
     }
-    
-    
-    if(maxAlt - 30 > alt - groundAlt){
+
+    //Launch Apogee((maxAlt - 10 > alt - groundAlt) && (time-launchTime > APOGEE_LOW_WIN)) || 
+    Serial.print(time-launchTime); Serial.print(" > "); Serial.println(APOGEE_HIGH_WIN);
+    if(((maxAlt - 10 > alt - groundAlt) && (time-launchTime > APOGEE_LOW_WIN)) || (time-launchTime > APOGEE_HIGH_WIN)){
       if(USE_DUAL_DEPLOYMENT){
-        currentStatus = BEFORE_MAIN;
+        currentStatus = BEFORE_SECOND;
       }else{
-        currentStatus == BEFORE_LANDING;
+        currentStatus = BEFORE_LANDING;
       }
     }
-  }else if(currentStatus == BEFORE_MAIN){
-    if(MAIN_TARGET_ALT -30 > alt - groundAlt){
+  }else if(currentStatus == BEFORE_SECOND){
+    if((SECOND_TARGET_ALT > alt - groundAlt && time-launchTime > SECOND_LOW_WIN) || (time-launchTime > SECOND_HIGH_WIN)){
       currentStatus = BEFORE_LANDING;
     } 
   }else if(currentStatus == BEFORE_LANDING){
