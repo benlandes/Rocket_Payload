@@ -64,7 +64,7 @@ void receiveEvent(int howMany)
   Serial1.print(",");
     
   dataFile.print(GPS.latitude, 4); dataFile.print(GPS.lat); dataFile.print(",");  
-  dataFile.print(GPS.longitude, 4); dataFile.println(GPS.lon); dataFile.print(","); 
+  dataFile.print(GPS.longitude, 4); dataFile.print(GPS.lon); dataFile.print(","); 
   dataFile.print(GPS.altitude); 
   dataFile.print(",");
 

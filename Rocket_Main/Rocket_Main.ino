@@ -242,7 +242,7 @@ void process(){
   }
   
   //Save data to sd card
-  String dataString = String(currentStatus)+","+String(time-launchTime)+","+String(accel)+","+String(temp)+","+String(pres)+","+String(alt);
+  String dataString = String(currentStatus)+","+String(time-launchTime)+","+String(accel)+","+String(temp)+","+String(pres);
   
   char dataChar[dataString.length()+1];
   dataString.toCharArray(dataChar,dataString.length()+1);
