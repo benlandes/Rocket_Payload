@@ -11,7 +11,7 @@
 const int chipSelect = 4;
 File dataFile;
 File testFile;
-SoftwareSerial softSerial(8, 9);
+SoftwareSerial softSerial(11, 12);
 Adafruit_GPS GPS(&softSerial);
 
 void setup() {
@@ -58,6 +58,16 @@ void setup() {
 }
 void receiveEvent(int howMany)
 {
+  Serial1.print(GPS.latitude, 4); Serial1.print(GPS.lat); Serial1.print(",");  
+  Serial1.print(GPS.longitude, 4); Serial1.print(GPS.lon); Serial1.print(","); 
+  Serial1.print(GPS.altitude); 
+  Serial1.print(",");
+    
+  dataFile.print(GPS.latitude, 4); dataFile.print(GPS.lat); dataFile.print(",");  
+  dataFile.print(GPS.longitude, 4); dataFile.println(GPS.lon); dataFile.print(","); 
+  dataFile.print(GPS.altitude); 
+  dataFile.print(",");
+
   while(Wire.available()){
     char c = Wire.read();
     dataFile.print(c);
@@ -82,14 +92,9 @@ void receiveEvent(int howMany)
   dataFile.println(totalChar);
   dataFile.flush();*/
   
-  //Serial1.print(GPS.latitude, 4); Serial1.print(GPS.lat); Serial1.print(",");  
-  //Serial1.print(GPS.longitude, 4); Serial1.print(GPS.lon); Serial1.print(","); 
-  //Serial1.print(GPS.altitude); Serial1.print(","); 
-  //Serial1.println(dataChar);
-  //dataFile.print(GPS.latitude, 4); dataFile.print(GPS.lat); dataFile.print(",");  
-  //dataFile.print(GPS.longitude, 4); dataFile.println(GPS.lon); dataFile.print(","); 
-  //dataFile.print(GPS.altitude); dataFile.print(","); 
-  //dataFile.print(dataChar);
+  
+  
+
   dataFile.println("");
   Serial1.println("");
   dataFile.flush();
@@ -159,10 +164,10 @@ void loop() {
     }else{
       //testFile = SD.open(TEST_FILE);
     }
-    
+    delay(500);
     
   }
-  delay(500);
+  
   
   
 

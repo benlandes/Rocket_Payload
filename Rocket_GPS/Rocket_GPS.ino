@@ -3,7 +3,7 @@
 #include <SoftwareSerial.h>
 
 // Use software serial for GPS (Xbee using hardware serial
-SoftwareSerial softSerial(6,9);
+SoftwareSerial softSerial(11,12);
 Adafruit_GPS GPS(&softSerial);
 
 void setup() {

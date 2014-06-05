@@ -44,6 +44,20 @@ const int accelPort = 0; //Analog
 //Calibration
 #define SEAP 1019.0 //mbar
 
+//Data Smoothing
+#define NUM_ALT_READINGS 10
+double altReadings[NUM_ALT_READINGS];
+int altReadsIndex = 0;
+int altReadsTotal = 0;
+int altAvg = 0;
+
+#define NUM_ACCEL_READINGS 10
+double accelReadings[NUM_ACCEL_READINGS];
+int accelReadsIndex = 0;
+int accelReadsTotal = 0;
+int accelAvg = 0;
+
+
 //States
 #define BEFORE_ARMING 0
 #define BEFORE_LAUNCH 1
@@ -77,8 +91,7 @@ void setup() {
 
   pressure.begin();
   
-  //Wait 10 seconds then set offsets for data
-  delay(10000);
+  //Will set offsets again once armed
   setOffsets();
 }
 
@@ -112,13 +125,13 @@ void receiveEvent(int howMany)
          armingSwitchEngaged = atoi(strtok(NULL,","));
          
          
-         Serial.print("Time: "); Serial.print(time); Serial.print("(s)");
+         /*Serial.print("Time: "); Serial.print(time); Serial.print("(s)");
          Serial.print(" h: "); Serial.print(alt); Serial.print("(m)");
          Serial.print(" a: "); Serial.print(accel); Serial.print("(m/s^2)");
          Serial.print(" T: "); Serial.print(temp); Serial.print("(C)");
          Serial.print(" P: "); Serial.print(pres); Serial.print("(mbar)");
          if(armingSwitchEngaged) Serial.println(" Switch Engaged");
-         else Serial.println(" Switch Disengaged");
+         else Serial.println(" Switch Disengaged");*/
          
          process();
          
@@ -179,13 +192,37 @@ void loop() {
     
     time = double(millis())/1000; //Sec
     process();
-    delay(10);
+    delay(500);
   }
   
 }
 void process(){
   //// Update Status ////
   int previousStatus = currentStatus;
+  
+  //Smooth out altitude data
+  altReadsTotal -= altReadings[altReadsIndex];
+  altReadings[altReadsIndex] = alt;
+  altReadsTotal += altReadings[altReadsIndex];
+  altReadsIndex++;
+  
+  if(altReadsIndex >= NUM_ALT_READINGS){
+    altReadsIndex = 0;
+  }
+  
+  altAvg = altReadsTotal/NUM_ALT_READINGS;
+  
+  //Smooth out accelerometer data
+  accelReadsTotal -= accelReadings[accelReadsIndex];
+  accelReadings[accelReadsIndex] = accel;
+  accelReadsTotal += accelReadings[accelReadsIndex];
+  accelReadsIndex++;
+  
+  if(accelReadsIndex >= NUM_ACCEL_READINGS){
+    accelReadsIndex = 0;
+  }
+  
+  accelAvg = accelReadsTotal/NUM_ACCEL_READINGS;
   
   updateStatus();
   
@@ -221,7 +258,7 @@ void process(){
 }
 void setOffsets(){
   voltOffset =  ((double) analogRead(accelPort))*5/1024 - 2.5;
-  groundAlt = alt;
+  groundAlt = altAvg;
 }
 void updateStatus(){
   
@@ -242,7 +279,7 @@ void updateStatus(){
   if(currentStatus == BEFORE_LAUNCH){
     //If acceleration is greater than
     //expected launch trigger acceleration
-    if(accel > LAUNCH_ACCEL){
+    if(accelAvg > LAUNCH_ACCEL){
       launchTime = time;
       currentStatus = DURING_MACH_DELAY;
     }
@@ -251,13 +288,12 @@ void updateStatus(){
        currentStatus = BEFORE_APOGEE;
     }
   }else if(currentStatus == BEFORE_APOGEE){
-    if(maxAlt < alt - groundAlt){
-      maxAlt = alt - groundAlt;
+    if(maxAlt < altAvg - groundAlt){
+      maxAlt = altAvg - groundAlt;
     }
 
-    //Launch Apogee((maxAlt - 10 > alt - groundAlt) && (time-launchTime > APOGEE_LOW_WIN)) || 
     Serial.print(time-launchTime); Serial.print(" > "); Serial.println(APOGEE_HIGH_WIN);
-    if(((maxAlt - 10 > alt - groundAlt) && (time-launchTime > APOGEE_LOW_WIN)) || (time-launchTime > APOGEE_HIGH_WIN)){
+    if(((maxAlt - 10 > altAvg - groundAlt) && (time-launchTime > APOGEE_LOW_WIN)) || (time-launchTime > APOGEE_HIGH_WIN)){
       if(USE_DUAL_DEPLOYMENT){
         currentStatus = BEFORE_SECOND;
       }else{
@@ -265,7 +301,7 @@ void updateStatus(){
       }
     }
   }else if(currentStatus == BEFORE_SECOND){
-    if((SECOND_TARGET_ALT > alt - groundAlt && time-launchTime > SECOND_LOW_WIN) || (time-launchTime > SECOND_HIGH_WIN)){
+    if((SECOND_TARGET_ALT > altAvg - groundAlt && time-launchTime > SECOND_LOW_WIN) || (time-launchTime > SECOND_HIGH_WIN)){
       currentStatus = BEFORE_LANDING;
     } 
   }else if(currentStatus == BEFORE_LANDING){
